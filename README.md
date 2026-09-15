@@ -1,4 +1,4 @@
-# SVG + Lottie Export
+Lottie / JSON / SVG Export - After Effects Plugin
 
 <img width="3692" height="2292" alt="ljs-0" src="https://github.com/user-attachments/assets/19d40749-4356-4e80-9637-3a96bb3324cd" />
 
