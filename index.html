@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AE Export — SVG &amp; Lottie</title>
+<style>
+  :root {
+    --bg: #262626;
+    --panel: #323232;
+    --line: #1e1e1e;
+    --edge: #454545;
+    --fg: #d6d6d6;
+    --dim: #8f8f8f;
+    --accent: #5b9dd9;
+    --warn: #d9a55b;
+    --bad: #d97a6c;
+    --ok: #7fb069;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font: 11px/1.45 -apple-system, "Helvetica Neue", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    overflow: hidden;
+  }
+  body { display: flex; flex-direction: column; padding: 10px; gap: 8px; }
+
+  button {
+    font: inherit; color: var(--fg);
+    background: linear-gradient(#3d3d3d, #343434);
+    border: 1px solid var(--edge); border-radius: 3px;
+    padding: 4px 8px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: linear-gradient(#464646, #3b3b3b); }
+  button:active:not(:disabled) { background: #2c2c2c; }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  button.primary {
+    background: linear-gradient(#4b7fae, #3f6d97);
+    border-color: #35597c; font-weight: 600; padding: 8px 9px;
+  }
+  button.primary:hover:not(:disabled) { background: linear-gradient(#568ec0, #4878a4); }
+
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row > .grow { flex: 1 1 auto; min-width: 0; }
+
+  fieldset {
+    border: 1px solid var(--edge); border-radius: 3px;
+    margin: 0; padding: 6px 9px 8px; flex: 0 0 auto;
+  }
+  legend { color: var(--dim); padding: 0 4px; text-transform: uppercase; letter-spacing: .06em; font-size: 9px; }
+
+  label.opt { display: flex; align-items: center; gap: 5px; color: var(--fg); }
+  select, input[type=number], input[type=text] {
+    font: inherit; color: var(--fg); background: #2b2b2b;
+    border: 1px solid var(--edge); border-radius: 2px; padding: 2px 4px;
+  }
+  input[type=number] { width: 46px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 10px; }
+
+  /* --- comp queue --- */
+  #queue {
+    flex: 1 1 40%; min-height: 84px; overflow-y: auto;
+    background: var(--line); border: 1px solid var(--edge); border-radius: 3px;
+    padding: 2px;
+  }
+  #queue .item {
+    display: flex; gap: 6px; align-items: baseline;
+    padding: 3px 5px; border-radius: 2px; cursor: pointer;
+  }
+  #queue .item:hover { background: #2a2a2a; }
+  #queue .item input { margin: 0; flex: 0 0 auto; }
+  #queue .item .nm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #queue .item .meta { color: var(--dim); font-variant-numeric: tabular-nums; flex: 0 0 auto; font-size: 10px; }
+  #queue .empty { color: var(--dim); padding: 6px; }
+
+  .path {
+    font: 10px/1.4 ui-monospace, Menlo, monospace; color: var(--dim);
+    background: #2b2b2b; border: 1px solid var(--edge); border-radius: 2px;
+    padding: 3px 5px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; direction: rtl; text-align: left;
+  }
+
+  #log {
+    flex: 1 1 35%; min-height: 60px; overflow-y: auto;
+    background: var(--line); border: 1px solid var(--edge); border-radius: 3px;
+    padding: 6px 8px; font: 10px/1.55 ui-monospace, Menlo, monospace;
+    color: var(--dim); -webkit-user-select: text; user-select: text;
+  }
+  #log div { white-space: pre-wrap; word-break: break-word; }
+  #log .ok   { color: var(--ok); }
+  #log .warn { color: var(--warn); }
+  #log .bad  { color: var(--bad); }
+  #log .head { color: var(--fg); margin-top: 4px; }
+
+  /* --- tooltips: a single fixed-position node, so nothing clips it --- */
+  #tip {
+    position: fixed; z-index: 99; max-width: 262px;
+    background: var(--line); color: var(--fg);
+    border: 1px solid var(--edge); border-radius: 3px;
+    padding: 6px 8px; font-size: 10.5px; line-height: 1.45;
+    box-shadow: 0 3px 10px rgba(0,0,0,.45);
+    pointer-events: none; opacity: 0; transition: opacity .09s;
+  }
+  #tip.on { opacity: 1; }
+  #tip b { display: block; font-weight: 600; margin-bottom: 2px; }
+  [data-tip] { cursor: help; }
+  button[data-tip], label[data-tip] { cursor: pointer; }
+
+  .watching { color: var(--ok); }
+  .foot { display: flex; gap: 6px; align-items: center; color: var(--dim); }
+  .foot .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+  <fieldset style="display:flex; flex-direction:column; flex:1 1 40%; min-height:110px">
+    <legend>Export queue</legend>
+    <div class="row" style="margin-bottom:5px">
+      <button id="refresh" data-tip="Re-read the project|Rebuilds the list from the current project. Ticks are kept for comps that are still there. The list also refreshes by itself whenever this panel regains focus.">Refresh</button>
+      <button id="selAE" data-tip="Match After Effects|Clears the ticks and re-ticks whatever is selected in the Project panel, plus the comp open in the timeline. Quickest way to queue a batch: select them in AE, then click this.">From project selection</button>
+      <button id="selAll" data-tip="Tick every comp|Queues every composition in the project, precomps included. Watch the count on the Export button before you start.">All</button>
+      <button id="selNone" data-tip="Clear the queue|Unticks everything. Nothing else changes.">None</button>
+    </div>
+    <div id="queue"><div class="empty">No compositions found.</div></div>
+  </fieldset>
+
+  <button class="primary" id="export" disabled data-tip="Export the queue|Each ticked comp is sampled in After Effects frame by frame, then written out in the formats you ticked. Comps run one at a time because sampling drives the playhead — expect the viewer to flick through the queue. Grey means nothing is ticked, no format is ticked, or python is not installed yet.">Export</button>
+
+  <fieldset>
+    <legend>Output</legend>
+    <div class="row" style="margin-bottom:5px">
+      <div class="path grow" id="outDir" data-tip="Output folder|Everything lands here, named after the comp. Defaults to an &quot;export&quot; folder beside the .aep once the project has been saved.">&#8230;</div>
+      <button id="pickOut" data-tip="Pick the output folder|Remembered between sessions and shared by the queue and the Lottie-JSON converter below.">Choose&#8230;</button>
+    </div>
+    <div class="grid">
+      <label class="opt" data-tip="Animated SVG|A self-contained .svg: CSS and SMIL only, no JavaScript and no player library. Drop it in an &lt;img&gt; or inline it and it animates on its own."><input type="checkbox" id="fmtSvg" checked> Animated SVG</label>
+      <label class="opt" data-tip="Lottie JSON|A .json for lottie-web or any Lottie player — no Bodymovin needed. It is baked: one linear keyframe per frame, so players reproduce After Effects exactly instead of re-interpolating. Bigger than a Bodymovin export and not meant to be reopened for editing; keep the .aep as your source."><input type="checkbox" id="fmtLottie"> Lottie JSON</label>
+      <label class="opt" data-tip="Playback (SVG only)|Loop: runs forever as soon as it is on screen. Once on hover: plays a single pass on mouseenter or tap, for icons in buttons and nav. Hold for JS: freezes on frame one and waits for your own code to start it. No effect on the Lottie JSON.">Playback
+        <select id="trigger">
+          <option value="loop">Loop</option>
+          <option value="hover">Once on hover</option>
+          <option value="none">Hold for JS</option>
+        </select>
+      </label>
+      <label class="opt" data-tip="Coordinate decimals|How many decimal places every coordinate is written with. 2 is exact enough for anything; 1 is worth about 10-15% of the file size and, on a 600-unit comp shown at 48px, lands well under a hundredth of a screen pixel. 0 will visibly quantise small motion. Applies to both formats.">Decimals
+        <input type="number" id="precision" min="0" max="4" value="2">
+      </label>
+      <label class="opt" data-tip="Simplify px|Drops animation samples that a straight line between their neighbours already covers to within this many pixels — decimation on the TIME axis, with the error measured as real on-screen displacement, not smoothing of the path. Typically 40-60% off a path-heavy file. A fast snap cannot be dropped: removing it would move the shape a long way, so those frames survive. 0 keeps every frame; 0.1 is a good default; above ~0.3 easing on slow moves starts to read as stepping. The worst error actually introduced is reported in the log after every export — read that rather than trusting the number.">Simplify px
+        <input type="number" id="simplify" min="0" max="1" step="0.05" value="0.1">
+      </label>
+      <label class="opt" data-tip="Token classes (SVG only)|Swaps the literal hexes your comps use for semantic classes — pictogram-shape, dot-shape and so on — and drops the inline paint, so your stylesheet owns the color and the icon follows the theme. The mapping lives in py/tokens.json; Copy CSS gives you the bindings. Untick to keep the hard-coded hex."><input type="checkbox" id="tokens" checked> Token classes (SVG)</label>
+      <label class="opt" data-tip="Work area only|Samples the comp&#39;s work area instead of its full duration. The usual reason to reach for this: AE timelines often have frozen padding at the head and tail, which makes a loop pause and then snap. Set the work area to the seamless window and tick this."><input type="checkbox" id="workArea"> Work area only</label>
+      <label class="opt" data-tip="Geometry only|Stops the SVG route substituting a transform for baked path data even where it would be safe. The optimisation is normally a straight size win on unclipped layers that merely rotate or translate, and it is verified against the baked geometry before it is accepted — so tick this only when you are chasing a rendering difference and want the dumbest possible output. Makes files noticeably larger."><input type="checkbox" id="geometry"> Geometry only</label>
+      <label class="opt" data-tip="Reveal after export|Opens a Finder window with the exported file selected, once per file written."><input type="checkbox" id="openAfter"> Reveal after export</label>
+      <label class="opt" data-tip="Keep baked JSON|Keeps the intermediate the panel samples out of After Effects, as &lt;comp&gt;-bake.json in the output folder, instead of deleting it. That file is what both emitters read, so it is the thing to send me if an export comes out wrong — and you can re-run it through the l2s command line without touching AE again."><input type="checkbox" id="keepBake"> Keep baked JSON</label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>From a Lottie JSON instead</legend>
+    <div class="row">
+      <button id="pickJson" class="grow" data-tip="Convert a Lottie JSON|For .json you already have, from Bodymovin or anywhere else: converts it to an animated SVG using the same emitter. This direction only — an existing Lottie cannot be turned back into a bake.">Convert file&#8230;</button>
+      <button id="watch" class="grow" data-tip="Watch a folder|Any Lottie .json that lands in the chosen folder is converted to SVG automatically. It waits for the file size to settle first, because most exporters write progressively. Click again to stop.">Watch folder&#8230;</button>
+    </div>
+  </fieldset>
+
+  <div id="log"><div>Ready.</div></div>
+
+  <div class="foot">
+    <span class="grow" id="status"></span>
+    <button id="copyCss" data-tip="Copy CSS|Puts the stylesheet bindings for the token classes on the clipboard — one rule per role, each pointing at its design token. Paste into your stylesheet so the exported SVGs pick up the theme.">Copy CSS</button>
+    <button id="clear" data-tip="Clear log|Empties the log above. Nothing else.">Clear log</button>
+  </div>
+
+  <div id="tip" role="tooltip"></div>
+
+<script src="js/CSInterface.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
