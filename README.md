@@ -1,5 +1,8 @@
 # SVG + Lottie Export
 
+<img width="3692" height="2292" alt="ljs-0" src="https://github.com/user-attachments/assets/19d40749-4356-4e80-9637-3a96bb3324cd" />
+
+
 An After Effects panel and a command-line tool that turn one comp — or a queue
 of them — into a self-contained animated SVG (CSS/SMIL only, no player, no
 `lottie-web`, no JS runtime, design tokens already substituted for the literal
